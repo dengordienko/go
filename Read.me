@@ -1,0 +1,46 @@
+# Host OS - моя конфигурация - Ubuntu 18.04 x64, 4CPU, 4GB.
+# Содержимое каталогов:
+# ./Assembly - исполняемые файлы генератора и сервиса, а также их докер-файлы
+# ./generator - исходный код генератора
+# ./images - готовые докер-образы генератора и сервиса, построенные на основе исполняемых файлов из каталога ./Assembly
+# ./service - исходный код сервиса
+# Нужно установить docker и скачать образы сервера и клиента clickhouse:
+curl -f sSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu bionic stable"
+sudo apt install docker-ce
+sudo docker pull yandex/clickhouse-server
+sudo docker pull yandex/clickhouse-client
+# Загрузить образы сервиса и генератора из каталога ./images в локальный репозиторий: 
+sudo docker load -i ./images/service.tar
+sudo docker load -i ./images/generator.tar
+# Запустить сервер и клиент ClickHouse:
+sudo docker run -d --name chsrv --rm -p 8123:8123 --ulimit nofile=262144:262144 yandex/clickhouse-server
+sudo docker run -it --rm --link chsrv:clickhouse-server yandex/clickhouse-client --host clickhouse-server
+# Запустить генератор и сервис(до запуска сервиса должен быть запущен сервер ClickHouse):
+sudo docker run -it --rm --network="host" generator
+sudo docker run -it --rm --network="host" service
+# Для проверки работы сервиса воспользуйтесь браузером (я пользовался FireFox), в котором наберите строку 
+# http://127.0.0.1:8082/ и далее 
+# http://127.0.0.1:8082/simplex/, 
+# http://127.0.0.1:8082/D3/, 
+# http://127.0.0.1:8082/TAC/XX, 
+# http://127.0.0.1:8082/MME/XX
+# или воспользуйтесь клиентом ClickHouse
+# ---------------------------------------------------------------------
+# Если понадобится сборка. Нужно установить go, т.к. я не стал собирать приложения в 
+# контейнере, чтобы уменьшить размер образа.
+# ---------------------------------------------------------------------
+# При разработке я пользовался go 1.12.9. Для работы с ClickHouse, пользовался пакетом mail.ru.
+go get -u github.com/mailru/go-clickhouse
+# При сборке, команды выполнять из корневого каталога проекта
+cd ./generator/
+CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ../Assembly/generator .
+cd ../Assembly/
+sudo docker build -t generator -f Dockerfile.generator .
+sudo docker save -o ../images/generator.tar generator
+cd ..
+cd ./service/
+CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ../Assembly/service .
+cd ../Assembly
+sudo docker build -t service -f Dockerfile.service
+sudo docker save -o ../images/service.tar service
